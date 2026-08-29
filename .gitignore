@@ -1,27 +1,29 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
 *.log
 server*.log
-*.pid
 
-# Node
+# Node.js / React
 node_modules/
 dist/
 .cache/
-package-lock.json
+.vite/
 
-# Environment
+# Environment Variables
 .env
 .env.local
 .env.production
 
-# AI Models (keep if > 100MB)
-models/
-*.safetensors
-*.bin
-*.onnx
-*.pt
+# AI Models (if too large)
+models/**/*.safetensors
+models/**/*.bin
 
 # IDE
 .vscode/
@@ -29,6 +31,5 @@ models/
 .DS_Store
 Thumbs.db
 
-# Testing
-.coverage
-.pytest_cache/
+# Railway
+*.pid
