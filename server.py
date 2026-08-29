@@ -21,9 +21,13 @@ from transformers import AutoImageProcessor, AutoModelForImageClassification
 
 load_dotenv()
 
-# Get production URL from environment variable (set on Railway)
 PRODUCTION_URL = os.getenv("PRODUCTION_URL", "")
 PORT = int(os.environ.get("PORT", 8000))
+
+print(f"🔧 Environment: {'production' if PRODUCTION_URL else 'development'}")
+print(f"📡 Port: {PORT}")
+print(f"📁 Current directory: {os.getcwd()}")
+print(f"📁 Files: {os.listdir('.')}")
 
 
 # ---------------------------------------------------------------------------
@@ -34,9 +38,10 @@ BASE_DIR = Path(__file__).resolve().parent
 MODEL_DIR = BASE_DIR / "models" / "ai-detector"
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-
-# Automatically use GPU if PyTorch detects CUDA.
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+print(f"🔍 Model directory: {MODEL_DIR}")
+print(f"⚙️  Device: {DEVICE}")
 
 
 # ---------------------------------------------------------------------------
@@ -45,75 +50,46 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 processor = None
 model = None
+model_loading_error = None
 
 
 # ---------------------------------------------------------------------------
-# Model download and loading
+# Model loading
 # ---------------------------------------------------------------------------
-
-def download_model_if_needed():
-    """Download model from Hugging Face if not available locally"""
-    if MODEL_DIR.exists() and (MODEL_DIR / "model.safetensors").exists():
-        print("✅ Model already exists locally")
-        return True
-    
-    print("📥 Model not found. Downloading from Hugging Face...")
-    try:
-        from huggingface_hub import snapshot_download
-        os.makedirs(MODEL_DIR, exist_ok=True)
-        snapshot_download(
-            repo_id="Smogy/SMOGY-Ai-images-detector",
-            local_dir=str(MODEL_DIR),
-            local_dir_use_symlinks=False,
-            ignore_patterns=["*.h5", "*.ot", "*.msgpack"],
-        )
-        print("✅ Model downloaded successfully")
-        return True
-    except Exception as e:
-        print(f"❌ Failed to download model: {e}")
-        return False
-
 
 def load_local_model():
-    global processor, model
-
-    print(f"🔍 Looking for model in: {MODEL_DIR}")
-    print(f"📁 Current directory: {os.getcwd()}")
-    print(f"📁 Files in current directory: {os.listdir('.')}")
-
-    # Try to download model if needed
-    if not download_model_if_needed():
-        print("⚠️  Model download failed. Continuing without model.")
-        return
-
-    # Check if models directory exists
-    if not MODEL_DIR.exists():
-        print(f"❌ Model directory not found: {MODEL_DIR}")
-        
-        # Check if models folder exists at all
-        if (BASE_DIR / "models").exists():
-            print(f"📁 models folder exists. Contents: {os.listdir(BASE_DIR / 'models')}")
-        else:
-            print("❌ No models folder found!")
-            return
-
-    # Check if model files exist
-    required_files = ["model.safetensors", "config.json", "preprocessor_config.json"]
-    missing_files = []
-    
-    for file in required_files:
-        if not (MODEL_DIR / file).exists():
-            missing_files.append(file)
-    
-    if missing_files:
-        print(f"❌ Missing model files: {missing_files}")
-        print(f"📁 Files in model directory: {os.listdir(MODEL_DIR) if MODEL_DIR.exists() else 'Directory not found'}")
-        return
-
-    print(f"✅ Loading local AI detector from: {MODEL_DIR}")
-    print(f"⚙️  Using device: {DEVICE}")
+    """Load the AI model with comprehensive error handling"""
+    global processor, model, model_loading_error
 
     try:
+        print(f"🔍 Looking for model in: {MODEL_DIR}")
+        
+        # Check if models directory exists
+        if not MODEL_DIR.exists():
+            error_msg = f"Model directory not found: {MODEL_DIR}"
+            print(f"❌ {error_msg}")
+            model_loading_error = error_msg
+            return
+
+        # Check if model files exist
+        required_files = ["model.safetensors", "config.json", "preprocessor_config.json"]
+        missing_files = []
+        
+        for file in required_files:
+            if not (MODEL_DIR / file).exists():
+                missing_files.append(file)
+        
+        if missing_files:
+            error_msg = f"Missing model files: {missing_files}"
+            print(f"❌ {error_msg}")
+            print(f"📁 Files in model directory: {os.listdir(MODEL_DIR) if MODEL_DIR.exists() else 'Directory not found'}")
+            model_loading_error = error_msg
+            return
+
+        print(f"✅ Loading local AI detector from: {MODEL_DIR}")
+        print(f"⚙️  Using device: {DEVICE}")
+
+        # Load processor
         print("📥 Loading processor...")
         processor = AutoImageProcessor.from_pretrained(
             str(MODEL_DIR),
@@ -121,6 +97,7 @@ def load_local_model():
         )
         print("✅ Processor loaded")
 
+        # Load model
         print("📥 Loading model...")
         model = AutoModelForImageClassification.from_pretrained(
             str(MODEL_DIR),
@@ -128,18 +105,21 @@ def load_local_model():
         )
         print("✅ Model loaded")
 
+        # Move to device
         print(f"📤 Moving model to {DEVICE}...")
         model.to(DEVICE)
         model.eval()
         print("✅ Model moved to device")
 
-        print("✅ Local AI detector loaded successfully.")
+        print("✅ Local AI detector loaded successfully!")
 
     except Exception as e:
-        print(f"❌ Failed to load model: {e}")
-        import traceback
-        traceback.print_exc()
-        # Don't raise - app can start but model won't work
+        error_msg = f"Model loading failed: {str(e)}"
+        print(f"❌ {error_msg}")
+        print(traceback.format_exc())
+        model_loading_error = error_msg
+        processor = None
+        model = None
 
 
 # ---------------------------------------------------------------------------
@@ -148,22 +128,25 @@ def load_local_model():
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    """Application lifespan - loads model on startup"""
     print("🚀 Starting up PramaanSetu AI Screening API...")
-    print(f"🔧 Environment: {'production' if PRODUCTION_URL else 'development'}")
-    print(f"📡 Port: {PORT}")
     
-    # Load model on startup
-    load_local_model()
+    try:
+        load_local_model()
+    except Exception as e:
+        print(f"❌ Lifespan error: {e}")
+        print(traceback.format_exc())
     
     # Print model status
     if model is not None:
         print("✅ Model loaded successfully!")
     else:
         print("⚠️  Model failed to load - API will return 503 for detection requests")
+        if model_loading_error:
+            print(f"📝 Error: {model_loading_error}")
     
     yield
     
-    # Cleanup on shutdown
     print("🛑 Shutting down...")
 
 
@@ -182,27 +165,29 @@ app = FastAPI(
 
 
 # ---------------------------------------------------------------------------
-# Global Exception Handler - Prevents 502 errors
+# Global Exception Handler - Catches ALL errors
 # ---------------------------------------------------------------------------
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Catch all exceptions and return detailed error info"""
-    error_details = {
+    """Catch any exception and return detailed error info"""
+    error_msg = {
         "error": str(exc),
         "error_type": type(exc).__name__,
         "traceback": traceback.format_exc(),
-        "message": "An internal error occurred. Please check the logs for details."
+        "timestamp": str(datetime.now()),
+        "url": str(request.url),
+        "method": request.method
     }
-    print(f"❌ Global exception caught: {error_details}")
+    print(f"❌ Global exception: {error_msg}")
     return JSONResponse(
         status_code=500,
-        content=error_details
+        content=error_msg
     )
 
 
 # ---------------------------------------------------------------------------
-# CORS
+# CORS - Updated for Production
 # ---------------------------------------------------------------------------
 
 allowed_origins = [
@@ -214,13 +199,11 @@ allowed_origins = [
     "http://localhost:8000",
 ]
 
-# Add production URL if set
 if PRODUCTION_URL:
     allowed_origins.append(PRODUCTION_URL)
     if PRODUCTION_URL.startswith("http://"):
         allowed_origins.append(PRODUCTION_URL.replace("http://", "https://"))
 
-# Add Vercel domains
 allowed_origins.extend([
     "https://pramaan-setu.vercel.app",
     "https://*.vercel.app",
@@ -238,16 +221,17 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Test Endpoints - These will work even if model fails
+# Ping Endpoint - Always works
 # ---------------------------------------------------------------------------
 
 @app.get("/ping")
 async def ping():
     """Simple test endpoint that always works"""
     return {
-        "status": "alive",
+        "pong": "alive",
         "timestamp": str(datetime.now()),
-        "message": "Server is responding!"
+        "model_loaded": model is not None,
+        "model_error": model_loading_error
     }
 
 
@@ -257,7 +241,7 @@ async def ping():
 
 @app.get("/")
 async def root():
-    """Root endpoint - returns server status"""
+    """Root endpoint"""
     try:
         return {
             "message": "PramaanSetu AI Screening API is running",
@@ -268,7 +252,6 @@ async def root():
             "timestamp": str(datetime.now())
         }
     except Exception as e:
-        print(f"❌ Root endpoint error: {e}")
         return {
             "error": str(e),
             "traceback": traceback.format_exc()
@@ -277,32 +260,30 @@ async def root():
 
 @app.get("/api/health")
 def health():
-    """Health check endpoint with detailed status"""
+    """Health check endpoint"""
     try:
-        model_status = "loaded" if model is not None else "not_loaded"
-        
         return {
-            "status": "healthy",
+            "status": "healthy" if model is not None else "degraded",
             "ready": model is not None,
             "model": "Smogy/SMOGY-Ai-images-detector",
             "mode": "local",
             "device": str(DEVICE),
             "model_loaded": model is not None,
-            "model_status": model_status,
+            "model_status": "loaded" if model is not None else "not_loaded",
+            "model_error": model_loading_error,
             "environment": "production" if PRODUCTION_URL else "development",
             "timestamp": str(datetime.now())
         }
     except Exception as e:
-        print(f"❌ Health endpoint error: {e}")
         return {
-            "status": "unhealthy",
+            "status": "error",
             "error": str(e),
             "traceback": traceback.format_exc()
         }
 
 
 # ---------------------------------------------------------------------------
-# AI image detection
+# AI image detection - Full working version
 # ---------------------------------------------------------------------------
 
 @app.post("/api/detect")
@@ -311,9 +292,6 @@ async def detect_ai_generated_image(
 ):
     """
     Analyze an uploaded image using the locally installed AI detector.
-
-    This returns a screening signal and must not be treated as proof
-    that an image is authentic or AI-generated.
     """
 
     if model is None or processor is None:
@@ -322,15 +300,13 @@ async def detect_ai_generated_image(
             detail={
                 "error": "Model not loaded",
                 "message": "The AI detector is currently unavailable. Please try again later.",
-                "status": "model_unavailable"
+                "status": "model_unavailable",
+                "error_details": model_loading_error
             },
         )
 
     # Validate file type
-    if (
-        not file.content_type
-        or not file.content_type.startswith("image/")
-    ):
+    if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(
             status_code=415,
             detail="Please upload a JPG, PNG, or other image file.",
@@ -340,16 +316,10 @@ async def detect_ai_generated_image(
     image_bytes = await file.read()
 
     if not image_bytes:
-        raise HTTPException(
-            status_code=400,
-            detail="The selected image is empty.",
-        )
+        raise HTTPException(status_code=400, detail="The selected image is empty.")
 
     if len(image_bytes) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail="Images must be 10 MB or smaller.",
-        )
+        raise HTTPException(status_code=413, detail="Images must be 10 MB or smaller.")
 
     # Open image
     try:
@@ -364,51 +334,25 @@ async def detect_ai_generated_image(
 
     # Run local model
     try:
-        inputs = processor(
-            images=image,
-            return_tensors="pt",
-        )
-
-        inputs = {
-            key: value.to(DEVICE)
-            for key, value in inputs.items()
-        }
+        inputs = processor(images=image, return_tensors="pt")
+        inputs = {key: value.to(DEVICE) for key, value in inputs.items()}
 
         with torch.inference_mode():
             outputs = model(**inputs)
 
-        probabilities = torch.softmax(
-            outputs.logits,
-            dim=-1,
-        )[0]
-
+        probabilities = torch.softmax(outputs.logits, dim=-1)[0]
         predictions = []
 
         for index, score in enumerate(probabilities):
-            label = model.config.id2label.get(
-                index,
-                str(index),
-            )
+            label = model.config.id2label.get(index, str(index))
+            predictions.append({"label": str(label), "score": float(score)})
 
-            predictions.append(
-                {
-                    "label": str(label),
-                    "score": float(score),
-                }
-            )
-
-        predictions.sort(
-            key=lambda item: item["score"],
-            reverse=True,
-        )
-
+        predictions.sort(key=lambda item: item["score"], reverse=True)
         print("Model predictions:", predictions)
 
     except Exception as error:
         print(f"Local model inference failed: {error!r}")
-        import traceback
-        traceback.print_exc()
-
+        print(traceback.format_exc())
         raise HTTPException(
             status_code=500,
             detail="The local AI detector failed while reviewing this image.",
@@ -421,34 +365,17 @@ async def detect_ai_generated_image(
     for prediction in predictions:
         label_lower = prediction["label"].lower()
 
-        if synthetic is None and any(
-            word in label_lower
-            for word in (
-                "ai",
-                "fake",
-                "generated",
-                "synthetic",
-            )
-        ):
+        if synthetic is None and any(word in label_lower for word in ("ai", "fake", "generated", "synthetic")):
             synthetic = prediction
 
-        if real is None and any(
-            word in label_lower
-            for word in (
-                "real",
-                "human",
-                "authentic",
-            )
-        ):
+        if real is None and any(word in label_lower for word in ("real", "human", "authentic")):
             real = prediction
 
     # Calculate AI-generation risk
     if synthetic is not None:
         risk = synthetic["score"]
-
     elif real is not None:
         risk = 1.0 - real["score"]
-
     else:
         raise HTTPException(
             status_code=502,
@@ -493,5 +420,5 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=port,
-        log_level="debug"
+        log_level="info"
     )
