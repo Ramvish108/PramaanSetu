@@ -25,7 +25,7 @@ const copy = {
     statStore: 'personal data stored',
     heroBannerEyebrow: 'Live screening preview',
     heroBannerTitle: 'Every photo gets a second look — instantly',
-    heroBannerBody: 'Before a document ever reaches a reviewer, it passes the same on-device check you\u2019ll see in step two: a plain-language verdict, not a wall of jargon.',
+    heroBannerBody: 'Before a document ever reaches a reviewer, it passes the same on-device check you\'ll see in step two: a plain-language verdict, not a wall of jargon.',
     heroBannerChip1: 'Screened before submission',
     heroBannerChip2: 'Nothing leaves this device unscanned',
     navHistory: 'History',
@@ -184,10 +184,10 @@ const copy = {
     teamEyebrow: 'इसके पीछे की टीम',
     teamTitle: 'डेवलपर्स से मिलें',
     teamSub: 'प्रमाणसेतु को इस हैकाथॉन के लिए दो-सदस्यीय टीम द्वारा बनाया गया है।',
-    dev1Name: 'डेवलपर एक',
+    dev1Name: 'Ritish',
     dev1Role: 'फ्रंटएंड और प्रोडक्ट डिज़ाइन',
     dev1Bio: 'प्लेसहोल्डर बायो — पृष्ठभूमि, इस प्रोजेक्ट में योगदान और लिंक (पोर्टफोलियो, GitHub, LinkedIn) के बारे में एक-दो पंक्तियाँ जोड़ें।',
-    dev2Name: 'डेवलपर दो',
+    dev2Name: 'Ram',
     dev2Role: 'बैकएंड और AI इंटीग्रेशन',
     dev2Bio: 'प्लेसहोल्डर बायो — पृष्ठभूमि, इस प्रोजेक्ट में योगदान और लिंक (पोर्टफोलियो, GitHub, LinkedIn) के बारे में एक-दो पंक्तियाँ जोड़ें।',
     choose: 'सेवा चुनें',
@@ -664,11 +664,7 @@ function App() {
     }
   }
 
-  /*
-   * This is the "working" part carried over from the original build:
-   * a real call to the local detection API instead of a client-side
-   * simulated/random risk score.
-   */
+  // ✅ FIX: Updated runCheck to use environment variable for API URL
   const runCheck = async () => {
     if (isLocked) return
     if (!file) { setNotice(t.errNoFile); return }
@@ -681,7 +677,14 @@ function App() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const response = await fetch('/api/detect', { method: 'POST', body: formData })
+      
+      // ✅ Use environment variable for API URL with fallback
+      const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${API_BASE_URL}/api/detect`, { 
+        method: 'POST', 
+        body: formData 
+      })
+      
       const isJson = response.headers.get('content-type')?.includes('application/json')
       const payload = isJson ? await response.json() : null
 
@@ -1191,68 +1194,4 @@ function App() {
 
 export default App
 
-createRoot(document.getElementById('root')).render(<App />)// import React, { useEffect, useRef, useState } from 'react'
-// import { createRoot } from 'react-dom/client'
-// import { ArrowLeft, ArrowRight, Camera, Check, ChevronDown, CircleAlert, FileCheck2, FileImage, Globe2, HelpCircle, Info, LoaderCircle, LockKeyhole, ScanLine, ShieldCheck, Sparkles, Upload, X } from 'lucide-react'
-// import './styles.css'
-
-// const copies = {
-//   en: { name: 'English', heading: 'Apply for your certificate\nwithout the confusion.', sub: 'Answer a few simple questions. We will check your documents before you submit.', start: 'Start application', help: 'How this works', choose: 'Choose a service', chooseSub: 'What would you like to do today?', birth: 'Birth certificate', birthSub: 'Request a new or corrected copy', income: 'Income certificate', incomeSub: 'Apply with your household details', domicile: 'Domicile certificate', domicileSub: 'Get proof of residence', document: 'Add your document', docSub: 'A clear photo helps prevent a rejection later.', review: 'Check my photo', submit: 'Submit application', received: 'Your request has been received.', receivedSub: 'We will keep you updated. You can return anytime with this request number.' },
-//   hi: { name: 'हिन्दी', heading: 'अपना प्रमाणपत्र आवेदन\nअब आसानी से करें।', sub: 'कुछ आसान सवालों के जवाब दें। जमा करने से पहले हम आपके दस्तावेज़ जाँचेंगे।', start: 'आवेदन शुरू करें', help: 'यह कैसे काम करता है', choose: 'सेवा चुनें', chooseSub: 'आप आज क्या करना चाहते हैं?', birth: 'जन्म प्रमाणपत्र', birthSub: 'नई या संशोधित प्रति का अनुरोध', income: 'आय प्रमाणपत्र', incomeSub: 'परिवार की जानकारी के साथ आवेदन', domicile: 'निवास प्रमाणपत्र', domicileSub: 'निवास का प्रमाण लें', document: 'अपना दस्तावेज़ जोड़ें', docSub: 'एक साफ़ फोटो से बाद में अस्वीकृति से बचाव होता है।', review: 'मेरी फोटो जाँचें', submit: 'आवेदन जमा करें', received: 'आपका अनुरोध प्राप्त हो गया है।', receivedSub: 'हम आपको अपडेट रखेंगे। इस अनुरोध संख्या से कभी भी वापस आएँ।' }
-// }
-
-// function App() {
-//   const [screen, setScreen] = useState(0)
-//   const [lang, setLang] = useState(localStorage.getItem('ps-lang') || 'en')
-//   const [menuOpen, setMenuOpen] = useState(false)
-//   const [service, setService] = useState('birth')
-//   const [file, setFile] = useState(null)
-//   const [preview, setPreview] = useState(null)
-//   const [checking, setChecking] = useState(false)
-//   const [checks, setChecks] = useState(null)
-//   const [notice, setNotice] = useState('')
-//   const input = useRef(null)
-//   const t = copies[lang]
-
-//   useEffect(() => localStorage.setItem('ps-lang', lang), [lang])
-//   useEffect(() => () => preview && URL.revokeObjectURL(preview), [preview])
-//   const step = Math.max(0, screen - 1)
-//   const selectFile = (chosen) => {
-//     if (!chosen) return
-//     setFile(chosen); setPreview(URL.createObjectURL(chosen)); setChecks(null); setNotice('')
-//   }
-//   const checkPhoto = async () => {
-//     if (!file) return setNotice('Please add a document photo first.')
-//     if (!file.type.startsWith('image/')) return setNotice('AI screening supports JPG, PNG, and camera images. Please upload an image instead of a PDF.')
-//     setChecking(true); setNotice('')
-//     try {
-//       const formData = new FormData()
-//       formData.append('file', file)
-//       const response = await fetch('/api/detect', { method: 'POST', body: formData })
-//       const isJson = response.headers.get('content-type')?.includes('application/json')
-//       const payload = isJson ? await response.json() : null
-//       if (!response.ok) throw new Error(payload?.detail || 'AI screening is unavailable. Start the local Python API on port 8000, then try again.')
-//       setChecks({ risk: payload.risk, label: payload.label, source: payload.model })
-//     } catch (error) {
-//       setNotice(error.message || 'The live AI check was unavailable. Please try again.')
-//     } finally { setChecking(false) }
-//   }
-//   const setLanguage = (next) => { setLang(next); setMenuOpen(false) }
-
-//   return <main>
-//     <header className="topbar"><button className="brand" onClick={() => setScreen(0)} aria-label="PramaanSetu home"><span className="brand-mark"><Check size={17}/></span><span>Pramaan<span>Setu</span></span></button><div className="language"><button onClick={() => setMenuOpen(!menuOpen)}><Globe2 size={16}/>{t.name}<ChevronDown size={15}/></button>{menuOpen && <div className="language-menu"><button onClick={() => setLanguage('en')}>English</button><button onClick={() => setLanguage('hi')}>हिन्दी</button></div>}</div></header>
-//     {screen > 0 && screen < 4 && <div className="progress-wrap"><div className="progress-label"><span>Application</span><span>Step {step} of 3</span></div><div className="progress"><i style={{width: `${(step / 3) * 100}%`}}/></div></div>}
-
-//     {screen === 0 && <section className="hero"><div className="eyebrow"><Sparkles size={15}/> A simpler public-service experience</div><h1>{t.heading.split('\n').map((x,i)=><React.Fragment key={i}>{x}{i===0 && <br/>}</React.Fragment>)}</h1><p>{t.sub}</p><div className="hero-actions"><button className="primary" onClick={() => setScreen(1)}>{t.start}<ArrowRight size={18}/></button><button className="text-button"><HelpCircle size={18}/>{t.help}</button></div><div className="assurance"><ShieldCheck size={18}/><span>Your details stay on this device. This is a safe prototype using sample data.</span></div><div className="hero-card"><div><FileCheck2 size={28}/><strong>Clear steps</strong><span>One question at a time</span></div><div><ScanLine size={28}/><strong>Photo check</strong><span>Catch common errors early</span></div><div><LockKeyhole size={28}/><strong>No sign-in</strong><span>Nothing personal is stored</span></div></div></section>}
-
-//     {screen === 1 && <section className="flow"><button className="back" onClick={() => setScreen(0)}><ArrowLeft size={18}/>Back</button><div className="flow-heading"><div className="step-icon"><FileCheck2 size={24}/></div><h2>{t.choose}</h2><p>{t.chooseSub}</p></div><div className="service-list">{[['birth', FileCheck2], ['income', Info], ['domicile', Globe2]].map(([key, Icon]) => <button key={key} className={`service ${service===key?'selected':''}`} onClick={() => setService(key)}><span className="service-icon"><Icon size={22}/></span><span><strong>{t[key]}</strong><small>{t[`${key}Sub`]}</small></span><span className="radio">{service===key && <i/>}</span></button>)}</div><button className="primary continue" onClick={() => setScreen(2)}>Continue<ArrowRight size={18}/></button></section>}
-
-//     {screen === 2 && <section className="flow"><button className="back" onClick={() => setScreen(1)}><ArrowLeft size={18}/>Back</button><div className="flow-heading"><div className="step-icon"><Camera size={24}/></div><h2>Screen your document image</h2><p>We check for signs that an image may have been generated or altered by AI.</p></div><div className="upload-card">{preview ? <><img src={preview} alt="Selected document preview"/><button className="remove" onClick={() => {setFile(null);setPreview(null);setChecks(null)}}><X size={16}/>Remove</button></> : <button className="upload-empty" onClick={() => input.current?.click()}><span><Upload size={24}/></span><strong>Take a photo or choose an image</strong><small>JPG or PNG · up to 10 MB</small></button>}<input ref={input} type="file" accept="image/*" capture="environment" onChange={e => selectFile(e.target.files?.[0])}/></div>{notice && <p className="notice"><CircleAlert size={16}/>{notice}</p>}{checks && <div className={`detection-result ${checks.risk >= .5 ? 'high-risk' : 'low-risk'}`}><span className="detection-icon">{checks.risk >= .5 ? <CircleAlert size={22}/> : <Check size={22}/>}</span><div><strong>{checks.label}</strong><p>AI-generation risk signal: <b>{Math.round(checks.risk * 100)}%</b></p><small>Result from {checks.source}. This is a screening signal, not proof of document authenticity.</small></div></div>}<button className="primary continue" disabled={checking} onClick={checks ? () => checks.risk >= .5 ? setNotice('Please upload an original document photo before continuing.') : setScreen(3) : checkPhoto}>{checking?<LoaderCircle className="spin" size={18}/> : checks ? checks.risk >= .5 ? <>Upload a different image<Upload size={18}/></> : <>Continue<ArrowRight size={18}/></> : <><ScanLine size={18}/>Run AI-generated image check</>}</button><p className="small-note"><Info size={14}/>The image is sent only to the configured Hugging Face inference model for this check. It is not stored by PramaanSetu.</p></section>}
-
-//     {screen === 3 && <section className="flow"><button className="back" onClick={() => setScreen(2)}><ArrowLeft size={18}/>Back</button><div className="flow-heading"><div className="step-icon"><FileCheck2 size={24}/></div><h2>Review your request</h2><p>Please check this summary before sending it.</p></div><div className="summary"><div><span>Service</span><strong>{t[service]}</strong></div><div><span>Applicant</span><strong>Sample citizen</strong></div><div><span>Document</span><strong>{file?.name || 'Document photo'}</strong><FileImage size={18}/></div><div><span>Photo review</span><strong className="verified"><Check size={15}/>Ready to submit</strong></div></div><div className="prototype-callout"><Info size={18}/><span><strong>Prototype notice</strong>This request will not be sent to a government department. It shows how a safer, clearer journey could work.</span></div><button className="primary continue" onClick={() => setScreen(4)}>{t.submit}<ArrowRight size={18}/></button></section>}
-
-//     {screen === 4 && <section className="success"><div className="success-icon"><Check size={34}/></div><div className="eyebrow">Request number · PS-260824-019</div><h1>{t.received}</h1><p>{t.receivedSub}</p><div className="receipt"><div><span>Service</span><strong>{t[service]}</strong></div><div><span>Status</span><strong className="verified"><Check size={15}/>Submitted</strong></div><div><span>Next update</span><strong>Within 2 working days</strong></div></div><button className="primary" onClick={() => setScreen(0)}>Return to home</button><p className="mock-label">Mock application · No real data submitted</p></section>}
-//     <footer><span>PramaanSetu is an independent hackathon prototype, not an official government service.</span><button>Accessibility</button><button>Privacy</button></footer>
-//   </main>
-// }
-// createRoot(document.getElementById('root')).render(<App />)
+createRoot(document.getElementById('root')).render(<App />)
