@@ -1,6 +1,9 @@
 import io
 import os
+import sys
+import traceback
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -8,6 +11,7 @@ from PIL import Image
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 
 
@@ -44,8 +48,31 @@ model = None
 
 
 # ---------------------------------------------------------------------------
-# Model loading with better error handling
+# Model download and loading
 # ---------------------------------------------------------------------------
+
+def download_model_if_needed():
+    """Download model from Hugging Face if not available locally"""
+    if MODEL_DIR.exists() and (MODEL_DIR / "model.safetensors").exists():
+        print("✅ Model already exists locally")
+        return True
+    
+    print("📥 Model not found. Downloading from Hugging Face...")
+    try:
+        from huggingface_hub import snapshot_download
+        os.makedirs(MODEL_DIR, exist_ok=True)
+        snapshot_download(
+            repo_id="Smogy/SMOGY-Ai-images-detector",
+            local_dir=str(MODEL_DIR),
+            local_dir_use_symlinks=False,
+            ignore_patterns=["*.h5", "*.ot", "*.msgpack"],
+        )
+        print("✅ Model downloaded successfully")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to download model: {e}")
+        return False
+
 
 def load_local_model():
     global processor, model
@@ -53,6 +80,11 @@ def load_local_model():
     print(f"🔍 Looking for model in: {MODEL_DIR}")
     print(f"📁 Current directory: {os.getcwd()}")
     print(f"📁 Files in current directory: {os.listdir('.')}")
+
+    # Try to download model if needed
+    if not download_model_if_needed():
+        print("⚠️  Model download failed. Continuing without model.")
+        return
 
     # Check if models directory exists
     if not MODEL_DIR.exists():
@@ -150,10 +182,29 @@ app = FastAPI(
 
 
 # ---------------------------------------------------------------------------
-# CORS - UPDATED for Production
+# Global Exception Handler - Prevents 502 errors
 # ---------------------------------------------------------------------------
 
-# List of allowed origins - add your Vercel URL here
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Catch all exceptions and return detailed error info"""
+    error_details = {
+        "error": str(exc),
+        "error_type": type(exc).__name__,
+        "traceback": traceback.format_exc(),
+        "message": "An internal error occurred. Please check the logs for details."
+    }
+    print(f"❌ Global exception caught: {error_details}")
+    return JSONResponse(
+        status_code=500,
+        content=error_details
+    )
+
+
+# ---------------------------------------------------------------------------
+# CORS
+# ---------------------------------------------------------------------------
+
 allowed_origins = [
     "http://localhost:3000",
     "http://localhost:5173",
@@ -166,13 +217,12 @@ allowed_origins = [
 # Add production URL if set
 if PRODUCTION_URL:
     allowed_origins.append(PRODUCTION_URL)
-    # Also add the https version if http was provided
     if PRODUCTION_URL.startswith("http://"):
         allowed_origins.append(PRODUCTION_URL.replace("http://", "https://"))
 
-# Add common Vercel domains (replace with your actual URL)
+# Add Vercel domains
 allowed_origins.extend([
-    "https://pramaan-setu.vercel.app",  # Replace with your actual Vercel URL
+    "https://pramaan-setu.vercel.app",
     "https://*.vercel.app",
 ])
 
@@ -188,37 +238,71 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Health check - UPDATED
+# Test Endpoints - These will work even if model fails
+# ---------------------------------------------------------------------------
+
+@app.get("/ping")
+async def ping():
+    """Simple test endpoint that always works"""
+    return {
+        "status": "alive",
+        "timestamp": str(datetime.now()),
+        "message": "Server is responding!"
+    }
+
+
+# ---------------------------------------------------------------------------
+# Main Endpoints
 # ---------------------------------------------------------------------------
 
 @app.get("/")
 async def root():
-    return {
-        "message": "PramaanSetu AI Screening API is running",
-        "status": "online",
-        "model_loaded": model is not None,
-        "environment": "production" if PRODUCTION_URL else "development",
-        "version": "1.0.0"
-    }
+    """Root endpoint - returns server status"""
+    try:
+        return {
+            "message": "PramaanSetu AI Screening API is running",
+            "status": "online",
+            "model_loaded": model is not None,
+            "environment": "production" if PRODUCTION_URL else "development",
+            "version": "1.0.0",
+            "timestamp": str(datetime.now())
+        }
+    except Exception as e:
+        print(f"❌ Root endpoint error: {e}")
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
 
 @app.get("/api/health")
 def health():
-    model_status = "loaded" if model is not None else "not_loaded"
-    
-    return {
-        "status": "healthy",
-        "ready": model is not None,
-        "model": "Smogy/SMOGY-Ai-images-detector",
-        "mode": "local",
-        "device": str(DEVICE),
-        "model_loaded": model is not None,
-        "model_status": model_status,
-        "environment": "production" if PRODUCTION_URL else "development"
-    }
+    """Health check endpoint with detailed status"""
+    try:
+        model_status = "loaded" if model is not None else "not_loaded"
+        
+        return {
+            "status": "healthy",
+            "ready": model is not None,
+            "model": "Smogy/SMOGY-Ai-images-detector",
+            "mode": "local",
+            "device": str(DEVICE),
+            "model_loaded": model is not None,
+            "model_status": model_status,
+            "environment": "production" if PRODUCTION_URL else "development",
+            "timestamp": str(datetime.now())
+        }
+    except Exception as e:
+        print(f"❌ Health endpoint error: {e}")
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 
 # ---------------------------------------------------------------------------
-# AI image detection - UPDATED with better error messages
+# AI image detection
 # ---------------------------------------------------------------------------
 
 @app.post("/api/detect")
@@ -242,10 +326,7 @@ async def detect_ai_generated_image(
             },
         )
 
-    # -----------------------------------------------------------------------
     # Validate file type
-    # -----------------------------------------------------------------------
-
     if (
         not file.content_type
         or not file.content_type.startswith("image/")
@@ -255,10 +336,7 @@ async def detect_ai_generated_image(
             detail="Please upload a JPG, PNG, or other image file.",
         )
 
-    # -----------------------------------------------------------------------
     # Read image
-    # -----------------------------------------------------------------------
-
     image_bytes = await file.read()
 
     if not image_bytes:
@@ -273,32 +351,24 @@ async def detect_ai_generated_image(
             detail="Images must be 10 MB or smaller.",
         )
 
-    # -----------------------------------------------------------------------
     # Open image
-    # -----------------------------------------------------------------------
-
     try:
         image = Image.open(io.BytesIO(image_bytes))
         image = image.convert("RGB")
     except Exception as error:
         print(f"Image decoding failed: {error!r}")
-
         raise HTTPException(
             status_code=400,
             detail="The uploaded file is not a valid image.",
         ) from error
 
-    # -----------------------------------------------------------------------
     # Run local model
-    # -----------------------------------------------------------------------
-
     try:
         inputs = processor(
             images=image,
             return_tensors="pt",
         )
 
-        # Move tensors to CPU/GPU.
         inputs = {
             key: value.to(DEVICE)
             for key, value in inputs.items()
@@ -327,7 +397,6 @@ async def detect_ai_generated_image(
                 }
             )
 
-        # Highest-confidence prediction first.
         predictions.sort(
             key=lambda item: item["score"],
             reverse=True,
@@ -345,10 +414,7 @@ async def detect_ai_generated_image(
             detail="The local AI detector failed while reviewing this image.",
         ) from error
 
-    # -----------------------------------------------------------------------
     # Interpret model labels
-    # -----------------------------------------------------------------------
-
     synthetic = None
     real = None
 
@@ -376,10 +442,7 @@ async def detect_ai_generated_image(
         ):
             real = prediction
 
-    # -----------------------------------------------------------------------
     # Calculate AI-generation risk
-    # -----------------------------------------------------------------------
-
     if synthetic is not None:
         risk = synthetic["score"]
 
@@ -387,7 +450,6 @@ async def detect_ai_generated_image(
         risk = 1.0 - real["score"]
 
     else:
-        
         raise HTTPException(
             status_code=502,
             detail={
@@ -396,21 +458,12 @@ async def detect_ai_generated_image(
             },
         )
 
-    # Keep the value safely within 0-1.
     risk = max(0.0, min(1.0, float(risk)))
-
-    # -----------------------------------------------------------------------
-    # User-facing result
-    # -----------------------------------------------------------------------
 
     if risk >= 0.50:
         label = "Likely AI-generated or manipulated"
     else:
         label = "No strong AI-generation signal"
-
-    # -----------------------------------------------------------------------
-    # Response
-    # -----------------------------------------------------------------------
 
     return {
         "risk": risk,
@@ -429,10 +482,7 @@ async def detect_ai_generated_image(
 
 
 # ---------------------------------------------------------------------------
-# Run directly with:
-#
-#     python server.py
-#
+# Run directly
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -441,6 +491,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         app,
-        host="0.0.0.0",  # Changed from 127.0.0.1 to allow external connections
+        host="0.0.0.0",
         port=port,
+        log_level="debug"
     )
